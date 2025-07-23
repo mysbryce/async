@@ -1,71 +1,93 @@
 Async = {}
 
+local function executeSingleTask(task, cb)
+    task(cb)
+end
+
 function Async.parallel(tasks, cb)
-	if #tasks == 0 then
-		cb({})
-		return
-	end
+    local taskCount = #tasks
 
-	local remaining = #tasks
-	local results = {}
+    if taskCount == 0 then
+        cb({})
+        return
+    end
 
-	for i = 1, #tasks, 1 do
-		CreateThread(function()
-			tasks[i](function(result)
-				results[#results+ 1] = result
-				
-				remaining = remaining - 1;
+    if taskCount == 1 then
+        executeSingleTask(tasks[1], function(result)
+            cb({ result })
+        end)
+        return
+    end
 
-				if remaining == 0 then
-					cb(results)
-				end
-			end)
-		end)
-	end
+    local remaining = taskCount
+    local results = {}
+
+    for i = 1, taskCount do
+        results[i] = nil
+    end
+
+    for i = 1, taskCount do
+        local taskIndex = i
+        CreateThread(function()
+            tasks[taskIndex](function(result)
+                results[taskIndex] = result
+                remaining = remaining - 1
+
+                if remaining == 0 then
+                    cb(results)
+                end
+            end)
+        end)
+    end
 end
 
 function Async.parallelLimit(tasks, limit, cb)
-	if #tasks == 0 then
-		cb({})
-		return
-	end
+    local taskCount = #tasks
 
-	local remaining = #tasks
-	local running = 0
-	local queue, results = {}, {}
+    if taskCount == 0 then
+        cb({})
+        return
+    end
 
-	for i=1, #tasks, 1 do
-		queue[#queue + 1] = tasks[i]
-	end
+    if limit >= taskCount then
+        Async.parallel(tasks, cb)
+        return
+    end
 
-	local function processQueue()
-		if #queue == 0 then
-			return
-		end
+    local remaining = taskCount
+    local running = 0
+    local currentIndex = 1
+    local results = {}
 
-		while running < limit and #queue > 0 do
-			local task = table.remove(queue, 1)
-			
-			running = running + 1
+    for i = 1, taskCount do
+        results[i] = nil
+    end
 
-			task(function(result)
-				results[#results+ 1] = result
-				
-				remaining = remaining - 1;
-				running = running - 1
+    local function processNext()
+        while running < limit and currentIndex <= taskCount do
+            local taskIndex = currentIndex
+            currentIndex = currentIndex + 1
+            running = running + 1
 
-				if remaining == 0 then
-					cb(results)
-				end
-			end)
-		end
+            CreateThread(function()
+                tasks[taskIndex](function(result)
+                    results[taskIndex] = result
+                    remaining = remaining - 1
+                    running = running - 1
 
-		CreateThread(processQueue)
-	end
+                    if remaining == 0 then
+                        cb(results)
+                    else
+                        processNext()
+                    end
+                end)
+            end)
+        end
+    end
 
-	processQueue()
+    processNext()
 end
 
 function Async.series(tasks, cb)
-	Async.parallelLimit(tasks, 1, cb)
+    Async.parallelLimit(tasks, 1, cb)
 end
