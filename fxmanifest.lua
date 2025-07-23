@@ -7,3 +7,5 @@ version '1.0.0'
 lua54 'yes'
 
 shared_script 'async.lua'
+
+provide 'async'
